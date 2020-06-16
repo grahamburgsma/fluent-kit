@@ -10,6 +10,7 @@ public struct DatabaseQuery {
     public var sorts: [Sort]
     public var limits: [Limit]
     public var offsets: [Offset]
+    public var returning: Returning?
 
     init(schema: String) {
         self.schema = schema
@@ -22,6 +23,7 @@ public struct DatabaseQuery {
         self.sorts = []
         self.limits = []
         self.offsets = []
+        self.returning = nil
     }
 }
 
@@ -49,6 +51,9 @@ extension DatabaseQuery: CustomStringConvertible {
         }
         if !self.offsets.isEmpty {
             parts.append("offsets=\(self.offsets)")
+        }
+        if let returning = returning {
+            parts.append("returning=\(returning)")
         }
         return parts.joined(separator: " ")
     }

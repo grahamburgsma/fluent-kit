@@ -22,6 +22,7 @@ public struct SQLQueryConverter {
     private func delete(_ query: DatabaseQuery) -> SQLExpression {
         var delete = SQLDelete(table: SQLIdentifier(query.schema))
         delete.predicate = self.filters(query.filters)
+        delete.returning = query.returning.map { self.returning($0, query: query) }
         return delete
     }
     
@@ -38,6 +39,7 @@ public struct SQLQueryConverter {
             ))
         }
         update.predicate = self.filters(query.filters)
+        update.returning = query.returning.map { self.returning($0, query: query) }
         return update
     }
     
@@ -47,34 +49,7 @@ public struct SQLQueryConverter {
         switch query.action {
         case .read:
             select.isDistinct = query.isUnique
-            select.columns = query.fields.map { field in
-                switch field {
-                case .custom(let any):
-                    return custom(any)
-                case .path(let path, let schema):
-                    let field: SQLExpression
-                    let key: FieldKey
-
-                    // determine field type based on count
-                    switch path.count {
-                    case 1:
-                        key = path[0]
-                        field = SQLColumn(self.key(key), table: schema)
-                    case 2...:
-                        key = path[0]
-                        field = self.delegate.nestedFieldExpression(
-                            self.key(key),
-                            path[1...].map(self.key)
-                        )
-                    default:
-                        fatalError("Field path must not be empty.")
-                    }
-                    return SQLAlias(
-                        field,
-                        as: SQLIdentifier(schema + "_" + self.key(key))
-                    )
-                }
-            }
+            select.columns = query.fields.map { self.aliasedField($0) }
         case .aggregate(let aggregate):
             select.columns = [self.aggregate(aggregate, isUnique: query.isUnique)]
         default: break
@@ -121,6 +96,7 @@ public struct SQLQueryConverter {
                 return self.value(value)
             }
         }
+        insert.returning = query.returning.map { self.returning($0, query: query) }
         return insert
     }
     
@@ -205,6 +181,36 @@ public struct SQLQueryConverter {
             }
         }
     }
+
+    private func aliasedField(_ field: DatabaseQuery.Field) -> SQLExpression {
+        switch field {
+        case .custom(let any):
+            return custom(any)
+        case .path(let path, let schema):
+            let field: SQLExpression
+            let key: FieldKey
+
+            // determine field type based on count
+            switch path.count {
+            case 1:
+                key = path[0]
+                field = SQLColumn(self.key(key), table: schema)
+            case 2...:
+                key = path[0]
+                field = self.delegate.nestedFieldExpression(
+                    self.key(key),
+                    path[1...].map(self.key)
+                )
+            default:
+                fatalError("Field path must not be empty.")
+            }
+            return SQLAlias(
+                field,
+                as: SQLIdentifier(schema + "_" + self.key(key))
+            )
+        }
+    }
+
 
     private func aggregate(_ aggregate: DatabaseQuery.Aggregate, isUnique: Bool) -> SQLExpression {
         switch aggregate {
@@ -379,6 +385,15 @@ public struct SQLQueryConverter {
             return key.description
         case .prefix(let prefix, let key):
             return self.key(prefix) + self.key(key)
+        }
+    }
+
+    private func returning(_ returning: DatabaseQuery.Returning, query: DatabaseQuery) -> SQLReturning {
+        switch returning {
+        case .all:
+            return SQLReturning(query.fields.map { self.aliasedField($0) })
+        case let .fields(fields):
+            return SQLReturning(fields.map { self.aliasedField($0) })
         }
     }
 }
