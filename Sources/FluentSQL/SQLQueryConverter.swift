@@ -27,6 +27,7 @@ public struct SQLQueryConverter {
         var delete = SQLDelete(table: SQLKit.SQLQualifiedTable(query.schema, space: query.space))
 
         delete.predicate = self.filters(query.filters)
+        delete.returning = query.returning.map { self.returning($0, query: query) }
         return delete
     }
     
@@ -53,6 +54,7 @@ public struct SQLQueryConverter {
             return SQLColumnAssignment(setting: SQLColumn(self.key(key)), to: self.value(value))
         }
         update.predicate = self.filters(query.filters)
+        update.returning = query.returning.map { self.returning($0, query: query) }
         return update
     }
     
@@ -123,11 +125,13 @@ public struct SQLQueryConverter {
             
             return value.mapValues(self.value(_:))
         }
-        
+
         // 5. Provide the list of columns and the sets of inserted values to the actual query, always specifying in the
         //    same order as the original field list.
         insert.columns = usedKeys.map { SQLColumn(self.key($0)) }
         insert.values = dictionaries.map { values in usedKeys.compactMap { values[$0] } }
+
+        insert.returning = query.returning.map { self.returning($0, query: query) }
 
         return insert
     }
@@ -387,6 +391,15 @@ public struct SQLQueryConverter {
 
     @inline(__always)
     private func key(_ key: FieldKey) -> String { key.description }
+
+    private func returning(_ returning: DatabaseQuery.Returning, query: DatabaseQuery) -> SQLReturning {
+        switch returning {
+        case .all:
+            return SQLReturning(query.fields.map { self.aliasedField($0) })
+        case let .fields(fields):
+            return SQLReturning(fields.map { self.aliasedField($0) })
+        }
+    }
 }
 
 private struct EncodableDatabaseInput: Encodable {
