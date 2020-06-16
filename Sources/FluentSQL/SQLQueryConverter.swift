@@ -22,7 +22,7 @@ public struct SQLQueryConverter {
     private func delete(_ query: DatabaseQuery) -> SQLExpression {
         var delete = SQLDelete(table: SQLIdentifier(query.schema))
         delete.predicate = self.filters(query.filters)
-        delete.returning = query.returning.map { self.returning($0, query: query) }
+        delete.returning = self.returning(query: query)
         return delete
     }
     
@@ -39,7 +39,7 @@ public struct SQLQueryConverter {
             ))
         }
         update.predicate = self.filters(query.filters)
-        update.returning = query.returning.map { self.returning($0, query: query) }
+        update.returning = self.returning(query: query)
         return update
     }
     
@@ -96,7 +96,7 @@ public struct SQLQueryConverter {
                 return self.value(value)
             }
         }
-        insert.returning = query.returning.map { self.returning($0, query: query) }
+        insert.returning = self.returning(query: query)
         return insert
     }
     
@@ -388,13 +388,10 @@ public struct SQLQueryConverter {
         }
     }
 
-    private func returning(_ returning: DatabaseQuery.Returning, query: DatabaseQuery) -> SQLReturning {
-        switch returning {
-        case .all:
-            return SQLReturning(query.fields.map { self.aliasedField($0) })
-        case let .fields(fields):
-            return SQLReturning(fields.map { self.aliasedField($0) })
-        }
+    private func returning(query: DatabaseQuery) -> SQLReturning? {
+        guard query.returning == true else { return nil }
+
+        return SQLReturning(query.fields.map { self.aliasedField($0) })
     }
 }
 
