@@ -16,6 +16,17 @@ extension Model {
         }.handle(.create, self, on: database)
     }
 
+    public func createAndReturn(on database: any Database) -> EventLoopFuture<Self> {
+        precondition(!self._$id.exists)
+        self.touchTimestamps(.create, .update)
+        self._$id.generate()
+        return Self.query(on: database)
+            .set(self.collectInput())
+            .returning(action: .create)
+            .first()
+            .map { $0! }
+    }
+
     private func _create(on database: any Database) -> EventLoopFuture<Void> {
         precondition(!self._$idExists)
         self.touchTimestamps(.create, .update)
