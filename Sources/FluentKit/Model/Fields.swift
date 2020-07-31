@@ -95,7 +95,7 @@ extension Fields {
 // MARK: Collect Input
 
 extension Fields {
-    internal func collectInput() -> [FieldKey: DatabaseQuery.Value] {
+    public func collectInput() -> [FieldKey: DatabaseQuery.Value] {
         let input = DictionaryInput()
         self.input(to: input)
         return input.storage
