@@ -17,14 +17,25 @@ extension Model {
     }
 
     public func createAndReturn(on database: any Database) -> EventLoopFuture<Self> {
-        precondition(!self._$id.exists)
-        self.touchTimestamps(.create, .update)
-        self._$id.generate()
-        return Self.query(on: database)
-            .set(self.collectInput())
-            .returning(action: .create)
-            .first()
-            .map { $0! }
+        let promise = database.eventLoop.makePromise(of: Self.self)
+
+        return database.configuration.middleware.chainingTo(Self.self) { event, model, db in
+            precondition(!self._$id.exists)
+            self.touchTimestamps(.create, .update)
+            self._$id.generate()
+
+            return Self.query(on: database)
+                .set(self.collectInput())
+                .returning(action: .create)
+                .first()
+                .map {
+                    promise.succeed($0!)
+                }
+        }
+        .handle(.create, self, on: database)
+        .flatMap {
+            promise.futureResult
+        }
     }
 
     private func _create(on database: any Database) -> EventLoopFuture<Void> {
