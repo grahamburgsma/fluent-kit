@@ -19,7 +19,7 @@ extension Model {
     public func createAndReturn(on database: any Database) -> EventLoopFuture<Self> {
         let promise = database.eventLoop.makePromise(of: Self.self)
 
-        return database.configuration.middleware.chainingTo(Self.self) { event, model, db in
+        database.configuration.middleware.chainingTo(Self.self) { event, model, db in
             precondition(!self._$id.exists)
             self.touchTimestamps(.create, .update)
             self._$id.generate()
@@ -33,9 +33,9 @@ extension Model {
                 }
         }
         .handle(.create, self, on: database)
-        .flatMap {
-            promise.futureResult
-        }
+        .cascadeFailure(to: promise)
+
+        return promise.futureResult
     }
 
     private func _create(on database: any Database) -> EventLoopFuture<Void> {
