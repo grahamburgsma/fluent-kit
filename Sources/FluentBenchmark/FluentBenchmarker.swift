@@ -49,6 +49,7 @@ public final class FluentBenchmarker {
         try self.testTimestamp()
         try self.testTransaction()
         try self.testUnique()
+        try self.testUpsert()
     }
 
     // MARK: Utilities

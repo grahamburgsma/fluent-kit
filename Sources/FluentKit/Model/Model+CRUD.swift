@@ -52,8 +52,13 @@ extension Model {
             query.query.returning.append(DatabaseQuery.Field.path([self._$id.key], schema: Self.schema))
         }
 
-        query.run { promise.succeed($0) }
-            .cascadeFailure(to: promise)
+        let run = query.run { promise.succeed($0) }
+        run.cascadeFailure(to: promise)
+        run.whenComplete { (result) in
+            if case let .success(value) = result, value == () {
+                promise.fail(FluentError.noResults)
+            }
+        }
 
         return promise.futureResult.flatMapThrowing { output in
             var input = self.collectInput()

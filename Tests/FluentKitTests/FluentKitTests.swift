@@ -584,23 +584,6 @@ final class FluentKitTests: XCTestCase {
         assertLastQuery(db, #"INSERT INTO "things" ("name") VALUES ($1) ON CONFLICT ("name") DO NOTHING"#)
         db.reset()
     }
-
-    func testModelUpsert() throws {
-        let db = DummyDatabaseForTestSQLSerializer()
-
-        let thing = Thing()
-        thing.name = "First"
-        try thing.create(
-            onConflict: \.$name,
-            .update {
-                $0.set(\.$name, to: "Last")
-            },
-            on: db
-        ).wait()
-
-        assertLastQuery(db, #"INSERT INTO "things" ("name") VALUES ($1) ON CONFLICT ("name") DO UPDATE SET "name" = $2 RETURNING "things"."name" AS "things_name", "things"."id" AS "things_id""#)
-        db.reset()
-    }
 }
 
 final class User: Model {
