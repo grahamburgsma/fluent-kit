@@ -27,9 +27,13 @@ extension Model {
             return Self.query(on: database)
                 .set(self.collectInput())
                 .returning(action: .create)
-                .first()
-                .map {
-                    promise.succeed($0!)
+                .run { output in
+                    do {
+                        try self.output(from: output.schema(Self.schema))
+                        promise.succeed(self)
+                    } catch {
+                        promise.fail(error)
+                    }
                 }
         }
         .handle(.create, self, on: database)

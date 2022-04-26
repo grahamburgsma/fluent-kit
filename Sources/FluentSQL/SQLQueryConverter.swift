@@ -395,7 +395,7 @@ public struct SQLQueryConverter {
     private func returning(query: DatabaseQuery) -> SQLReturning? {
         guard query.returning == true else { return nil }
 
-        return SQLReturning(query.fields.map { self.aliasedField($0) })
+        return SQLReturning(query.fields.map { self.field($0, aliased: true) })
     }
 }
 
