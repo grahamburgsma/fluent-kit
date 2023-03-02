@@ -18,7 +18,7 @@ public extension Model {
     }
 
     @discardableResult
-    func createAndReturn(on database: Database) async throws -> Self {
+    func createAndReturn(on database: any Database) async throws -> Self {
         try await self.createAndReturn(on: database).get()
     }
     
