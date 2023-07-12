@@ -1,3 +1,6 @@
+import SQLKit
+import FluentKit
+
 public protocol SQLConverterDelegate {
     func customDataType(_ dataType: DatabaseSchema.DataType) -> SQLExpression?
     func nestedFieldExpression(_ column: String, _ path: [String]) -> SQLExpression
@@ -31,7 +34,7 @@ public struct SQLSchemaConverter {
     // MARK: Private
 
     private func update(_ schema: DatabaseSchema) -> SQLExpression {
-        var update = SQLAlterTable(name: self.name(schema.schema))
+        var update = SQLAlterTable(name: self.name(schema.schema, space: schema.space))
         update.addColumns = schema.createFields.map(self.fieldDefinition)
         update.dropColumns = schema.deleteFields.map(self.fieldName)
         update.modifyColumns = schema.updateFields.map(self.fieldUpdate)
@@ -45,12 +48,12 @@ public struct SQLSchemaConverter {
     }
     
     private func delete(_ schema: DatabaseSchema) -> SQLExpression {
-        let delete = SQLDropTable(table: self.name(schema.schema))
+        let delete = SQLDropTable(table: self.name(schema.schema, space: schema.space))
         return delete
     }
     
     private func create(_ schema: DatabaseSchema) -> SQLExpression {
-        var create = SQLCreateTable(name: self.name(schema.schema))
+        var create = SQLCreateTable(name: self.name(schema.schema, space: schema.space))
         create.columns = schema.createFields.map(self.fieldDefinition)
         create.tableConstraints = schema.createConstraints.map {
             self.constraint($0, table: schema.schema)
@@ -61,8 +64,8 @@ public struct SQLSchemaConverter {
         return create
     }
     
-    private func name(_ string: String) -> SQLExpression {
-        return SQLIdentifier(string)
+    private func name(_ string: String, space: String? = nil) -> SQLExpression {
+        return SQLQualifiedTable(string, space: space)
     }
     
     private func constraint(_ constraint: DatabaseSchema.Constraint, table: String) -> SQLExpression {
@@ -75,9 +78,9 @@ public struct SQLSchemaConverter {
                     algorithm: SQLTableConstraintAlgorithm.unique(columns: fields.map(self.fieldName)),
                     name: SQLIdentifier(name)
                 )
-            case .foreignKey(let local, let schema, let foreign, let onDelete, let onUpdate):
+            case .foreignKey(let local, let schema, let space, let foreign, let onDelete, let onUpdate):
                 let reference = SQLForeignKey(
-                    table: self.name(schema),
+                    table: self.name(schema, space: space),
                     columns: foreign.map(self.fieldName),
                     onDelete: self.foreignKeyAction(onDelete),
                     onUpdate: self.foreignKeyAction(onUpdate)
@@ -89,6 +92,8 @@ public struct SQLSchemaConverter {
                     ),
                     name: SQLIdentifier(name)
                 )
+            case .compositeIdentifier(let fields):
+                return SQLConstraint(algorithm: SQLTableConstraintAlgorithm.primaryKey(columns: fields.map(self.fieldName)), name: nil)
             case .custom(let any):
                 return SQLConstraint(algorithm: any as! SQLExpression, name: customName.map(SQLIdentifier.init(_:)))
             }
@@ -101,9 +106,9 @@ public struct SQLSchemaConverter {
         switch constraint {
         case .constraint(let algorithm):
             let name = self.constraintIdentifier(algorithm, table: table)
-            return SQLDropConstraint(name: SQLIdentifier(name))
+            return SQLDropTypedConstraint(name: SQLIdentifier(name), algorithm: algorithm)
         case .name(let name):
-            return SQLDropConstraint(name: SQLIdentifier(name))
+            return SQLDropTypedConstraint(name: SQLIdentifier(name), algorithm: .sql(raw: ""))
         case .custom(let any):
             return custom(any)
         }
@@ -114,7 +119,7 @@ public struct SQLSchemaConverter {
         let prefix: String
 
         switch algorithm {
-        case .foreignKey(let localFields, _, let foreignFields, _, _):
+        case .foreignKey(let localFields, _, _, let foreignFields, _, _):
             prefix = "fk"
             fieldNames = localFields + foreignFields
         case .unique(let fields):
@@ -240,9 +245,9 @@ public struct SQLSchemaConverter {
             return SQLColumnConstraintAlgorithm.notNull
         case .identifier(let auto):
             return SQLColumnConstraintAlgorithm.primaryKey(autoIncrement: auto)
-        case .foreignKey(let schema, let field, let onDelete, let onUpdate):
+        case .foreignKey(let schema, let space, let field, let onDelete, let onUpdate):
             return SQLColumnConstraintAlgorithm.references(
-                SQLIdentifier(schema),
+                self.name(schema, space: space),
                 self.fieldName(field),
                 onDelete: self.foreignKeyAction(onDelete),
                 onUpdate: self.foreignKeyAction(onUpdate)
@@ -266,9 +271,47 @@ public struct SQLSchemaConverter {
     }
 }
 
-/// SQL drop constraint expression.
+/// SQL drop constraint expression with awareness of foreign keys (for MySQL's broken sake).
+///
+/// - Warning: This is only public for the benefit of `FluentBenchmarks`. DO NOT USE THIS TYPE!
+public struct SQLDropTypedConstraint: SQLExpression {
+    public let name: SQLExpression
+    public let algorithm: DatabaseSchema.ConstraintAlgorithm
+    
+    public init(name: SQLExpression, algorithm: DatabaseSchema.ConstraintAlgorithm) {
+        self.name = name
+        self.algorithm = algorithm
+    }
+    
+    public func serialize(to serializer: inout SQLSerializer) {
+        serializer.statement {
+            if $0.dialect.name == "mysql" { // TODO: Add an SQLDialect setting for this branch
+                // MySQL 5.7 does not support the type-generic "DROP CONSTRAINT" syntax.
+                switch algorithm {
+                case .foreignKey(_, _, _, _, _, _):
+                    $0.append("FOREIGN KEY")
+                    $0.append($0.dialect.normalizeSQLConstraint(identifier: self.name))
+                case .unique(_):
+                    $0.append("KEY")
+                    $0.append($0.dialect.normalizeSQLConstraint(identifier: self.name))
+                // Ignore `.compositeIdentifier()`, that gets too complicated between databases
+                default:
+                    // Ideally we'd detect MySQL 8.0 and use `CONSTRAINT` here...
+                    $0.append("KEY")
+                    $0.append($0.dialect.normalizeSQLConstraint(identifier: self.name))
+                }
+            } else {
+                $0.append("CONSTRAINT")
+                $0.append($0.dialect.normalizeSQLConstraint(identifier: self.name))
+            }
+        }
+    }
+}
+
+/// Obsolete form of SQL drop constraint expression.
 ///
 ///     `CONSTRAINT/KEY <name>`
+@available(*, deprecated, message: "Use SQLDropTypedConstraint instead")
 public struct SQLDropConstraint: SQLExpression {
     public var name: SQLExpression
 

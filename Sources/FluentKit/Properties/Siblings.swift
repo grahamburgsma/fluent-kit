@@ -1,3 +1,5 @@
+import NIOCore
+
 extension Model {
     public typealias Siblings<To, Through> = SiblingsProperty<Self, To, Through>
         where To: Model, Through: Model
@@ -39,6 +41,10 @@ public final class SiblingsProperty<From, To, Through>
         from: KeyPath<Through, Through.Parent<From>>,
         to: KeyPath<Through, Through.Parent<To>>
     ) {
+        guard !(From.IDValue.self is Fields.Type), !(To.IDValue.self is Fields.Type) else {
+            fatalError("Can not use @Siblings with models which have composite IDs.")
+        }
+
         self.from = from
         self.to = to
         self._pivots = ChildrenProperty<From, Through>(for: from)
@@ -121,6 +127,7 @@ public final class SiblingsProperty<From, To, Through>
             let pivot = Through()
             pivot[keyPath: self.from].id = fromID
             pivot[keyPath: self.to].id = toID
+            pivot[keyPath: self.to].value = to
             edit(pivot)
             return pivot
         }.create(on: database)
@@ -174,6 +181,7 @@ public final class SiblingsProperty<From, To, Through>
         let pivot = Through()
         pivot[keyPath: self.from].id = fromID
         pivot[keyPath: self.to].id = toID
+        pivot[keyPath: self.to].value = to
         edit(pivot)
         return pivot.save(on: database)
     }
@@ -292,6 +300,10 @@ extension SiblingsProperty: AnyCodableProperty {
     public func decode(from decoder: Decoder) throws {
         // don't decode
     }
+
+    public var skipPropertyEncoding: Bool {
+        self.value == nil // Avoids leaving an empty JSON object lying around in some cases.
+    }
 }
 
 // MARK: Relation
@@ -314,12 +326,22 @@ extension SiblingsProperty: Relation {
 
 extension SiblingsProperty: EagerLoadable {
     public static func eagerLoad<Builder>(
+        _ relationKey: KeyPath<From, SiblingsProperty<From, To, Through>>,
+        to builder: Builder
+    )
+    where Builder : EagerLoadBuilder, From == Builder.Model
+    {
+        self.eagerLoad(relationKey, withDeleted: false, to: builder)
+    }
+    
+    public static func eagerLoad<Builder>(
         _ relationKey: KeyPath<From, From.Siblings<To, Through>>,
+        withDeleted: Bool,
         to builder: Builder
     )
         where Builder: EagerLoadBuilder, Builder.Model == From
     {
-        let loader = SiblingsEagerLoader(relationKey: relationKey)
+        let loader = SiblingsEagerLoader(relationKey: relationKey, withDeleted: withDeleted)
         builder.add(loader: loader)
     }
 
@@ -344,16 +366,20 @@ private struct SiblingsEagerLoader<From, To, Through>: EagerLoader
     where From: Model, Through: Model, To: Model
 {
     let relationKey: KeyPath<From, From.Siblings<To, Through>>
+    let withDeleted: Bool
 
     func run(models: [From], on database: Database) -> EventLoopFuture<Void> {
         let ids = models.map { $0.id! }
 
         let from = From()[keyPath: self.relationKey].from
         let to = From()[keyPath: self.relationKey].to
-        return To.query(on: database)
+        let builder = To.query(on: database)
             .join(Through.self, on: \To._$id == to.appending(path: \.$id))
             .filter(Through.self, from.appending(path: \.$id) ~~ Set(ids))
-            .all()
+        if (self.withDeleted) {
+            builder.withDeleted()
+        }
+        return builder.all()
             .flatMapThrowing
         {
             var map: [From.IDValue: [To]] = [:]
@@ -362,7 +388,8 @@ private struct SiblingsEagerLoader<From, To, Through>: EagerLoader
                 map[fromID, default: []].append(to)
             }
             for model in models {
-                model[keyPath: self.relationKey].value = map[model.id!] ?? []
+                guard let id = model.id else { throw FluentError.idRequired }
+                model[keyPath: self.relationKey].value = map[id] ?? []
             }
         }
     }

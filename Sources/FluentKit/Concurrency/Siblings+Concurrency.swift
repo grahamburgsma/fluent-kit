@@ -1,7 +1,5 @@
-#if compiler(>=5.5) && canImport(_Concurrency)
 import NIOCore
 
-@available(macOS 12, iOS 15, watchOS 8, tvOS 15, *)
 public extension SiblingsProperty {
     
     func load(on database: Database) async throws {
@@ -53,6 +51,8 @@ public extension SiblingsProperty {
     func detach(_ to: To, on database: Database) async throws {
         try await self.detach(to, on: database).get()
     }
+    
+    func detachAll(on database: Database) async throws {
+        try await self.detachAll(on: database).get()
+    }
 }
-
-#endif

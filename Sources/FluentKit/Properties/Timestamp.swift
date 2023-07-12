@@ -1,3 +1,5 @@
+import Foundation
+
 extension Model {
     public typealias Timestamp<Format> = TimestampProperty<Self, Format>
         where Format: TimestampFormat
@@ -110,6 +112,17 @@ extension TimestampProperty: AnyQueryableProperty {
 
 extension TimestampProperty: QueryableProperty { }
 
+// MARK: Query-addressable
+
+extension TimestampProperty: AnyQueryAddressableProperty {
+    public var anyQueryableProperty: AnyQueryableProperty { self }
+    public var queryablePath: [FieldKey] { self.path }
+}
+
+extension TimestampProperty: QueryAddressableProperty {
+    public var queryableProperty: TimestampProperty<Model, Format> { self }
+}
+
 // MARK: Database
 
 extension TimestampProperty: AnyDatabaseProperty {
@@ -199,9 +212,10 @@ extension Schema {
         guard let timestamp = self.init().deletedTimestamp else {
             return
         }
-        let deletedAtField = DatabaseQuery.Field.path(
+        let deletedAtField = DatabaseQuery.Field.extendedPath(
             [timestamp.key],
-            schema: self.schemaOrAlias
+            schema: self.schemaOrAlias,
+            space: self.space
         )
         query.filters.append(.group([
             .value(deletedAtField, .equal, .null),

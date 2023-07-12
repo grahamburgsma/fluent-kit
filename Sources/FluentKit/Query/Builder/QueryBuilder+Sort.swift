@@ -12,6 +12,15 @@ extension QueryBuilder {
         self.sort(Model.path(for: field), direction)
     }
 
+    public func sort<Field>(
+        _ field: KeyPath<Model, GroupPropertyPath<Model, Field>>,
+        _ direction: DatabaseQuery.Sort.Direction = .ascending
+    ) -> Self
+        where Field: QueryableProperty
+    {
+        self.sort(Model.path(for: field), direction)
+    }
+
     public func sort(
         _ path: FieldKey,
         _ direction: DatabaseQuery.Sort.Direction = .ascending
@@ -23,7 +32,7 @@ extension QueryBuilder {
         _ path: [FieldKey],
         _ direction: DatabaseQuery.Sort.Direction = .ascending
     ) -> Self {
-        self.sort(.path(path, schema: Model.schema), direction)
+        self.sort(.extendedPath(path, schema: Model.schemaOrAlias, space: Model.spaceIfNotAliased), direction)
     }
 
     public func sort<Joined, Field>(
@@ -59,7 +68,7 @@ extension QueryBuilder {
     ) -> Self
         where Joined: Schema
     {
-        self.sort(.path(path, schema: Joined.schemaOrAlias), direction)
+        self.sort(.extendedPath(path, schema: Joined.schemaOrAlias, space: Joined.spaceIfNotAliased), direction)
     }
 
     public func sort(

@@ -79,6 +79,17 @@ extension OptionalFieldProperty: AnyQueryableProperty {
 
 extension OptionalFieldProperty: QueryableProperty { }
 
+// MARK: Query-addressable
+
+extension OptionalFieldProperty: AnyQueryAddressableProperty {
+    public var anyQueryableProperty: AnyQueryableProperty { self }
+    public var queryablePath: [FieldKey] { self.path }
+}
+
+extension OptionalFieldProperty: QueryAddressableProperty {
+    public var queryableProperty: OptionalFieldProperty<Model, WrappedValue> { self }
+}
+
 // MARK: Database
 
 extension OptionalFieldProperty: AnyDatabaseProperty {
@@ -87,7 +98,9 @@ extension OptionalFieldProperty: AnyDatabaseProperty {
     }
 
     public func input(to input: DatabaseInput) {
-        if let inputValue = self.inputValue {
+        if input.wantsUnmodifiedKeys {
+            input.set(self.inputValue ?? self.outputValue.map { $0.map { .bind($0) } ?? .null } ?? .default, at: self.key)
+        } else if let inputValue = self.inputValue {
             input.set(inputValue, at: self.key)
         }
     }

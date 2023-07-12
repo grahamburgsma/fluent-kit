@@ -1,3 +1,5 @@
+import NIOCore
+
 extension Model {
     public typealias Children<To> = ChildrenProperty<Self, To>
         where To: FluentKit.Model
@@ -9,22 +11,23 @@ extension Model {
 public final class ChildrenProperty<From, To>
     where From: Model, To: Model
 {
-    public enum Key {
-        case required(KeyPath<To, To.Parent<From>>)
-        case optional(KeyPath<To, To.OptionalParent<From>>)
-    }
+    public typealias Key = RelationParentKey<From, To>
 
     public let parentKey: Key
     var idValue: From.IDValue?
 
     public var value: [To]?
 
-    public init(for parent: KeyPath<To, To.Parent<From>>) {
-        self.parentKey = .required(parent)
+    public convenience init(for parent: KeyPath<To, To.Parent<From>>) {
+        self.init(for: .required(parent))
     }
 
-    public init(for optionalParent: KeyPath<To, To.OptionalParent<From>>) {
-        self.parentKey = .optional(optionalParent)
+    public convenience init(for optionalParent: KeyPath<To, To.OptionalParent<From>>) {
+        self.init(for: .optional(optionalParent))
+    }
+    
+    private init(for parentKey: Key) {
+        self.parentKey = parentKey
     }
 
     public var wrappedValue: [To] {
@@ -138,6 +141,10 @@ extension ChildrenProperty: AnyCodableProperty {
     public func decode(from decoder: Decoder) throws {
         // don't decode
     }
+    
+    public var skipPropertyEncoding: Bool {
+        self.value == nil // Avoids leaving an empty JSON object lying around in some cases.
+    }
 }
 
 // MARK: Relation
@@ -154,27 +161,26 @@ extension ChildrenProperty: Relation {
     }
 }
 
-extension ChildrenProperty.Key: CustomStringConvertible {
-    public var description: String {
-        switch self {
-        case .optional(let keyPath):
-            return To.path(for: keyPath.appending(path: \.$id)).description
-        case .required(let keyPath):
-            return To.path(for: keyPath.appending(path: \.$id)).description
-        }
-    }
-}
-
 // MARK: Eager Loadable
 
 extension ChildrenProperty: EagerLoadable {
     public static func eagerLoad<Builder>(
+        _ relationKey: KeyPath<From, ChildrenProperty<From, To>>,
+        to builder: Builder
+    )
+        where Builder : EagerLoadBuilder, From == Builder.Model
+    {
+        self.eagerLoad(relationKey, withDeleted: false, to: builder)
+    }
+    
+    public static func eagerLoad<Builder>(
         _ relationKey: KeyPath<From, From.Children<To>>,
+        withDeleted: Bool,
         to builder: Builder
     )
         where Builder: EagerLoadBuilder, Builder.Model == From
     {
-        let loader = ChildrenEagerLoader(relationKey: relationKey)
+        let loader = ChildrenEagerLoader(relationKey: relationKey, withDeleted: withDeleted)
         builder.add(loader: loader)
     }
 
@@ -198,7 +204,8 @@ private struct ChildrenEagerLoader<From, To>: EagerLoader
     where From: Model, To: Model
 {
     let relationKey: KeyPath<From, From.Children<To>>
-
+    let withDeleted: Bool
+    
     func run(models: [From], on database: Database) -> EventLoopFuture<Void> {
         let ids = models.map { $0.id! }
 
@@ -209,6 +216,9 @@ private struct ChildrenEagerLoader<From, To>: EagerLoader
             builder.filter(optional.appending(path: \.$id) ~~ Set(ids))
         case .required(let required):
             builder.filter(required.appending(path: \.$id) ~~ Set(ids))
+        }
+        if (self.withDeleted) {
+            builder.withDeleted()
         }
         return builder.all().map {
             for model in models {
