@@ -56,16 +56,34 @@ extension Model {
                 query.query.returning.append(DatabaseQuery.Field.path([self._$id.key], schema: Self.schema))
             }
 
-            let promise = database.eventLoop.makePromise(of: DatabaseOutput.self)
-            query.run { promise.succeed($0) }
-            .cascadeFailure(to: promise)
+            let promise = database.eventLoop.makePromise(of: DatabaseOutput?.self)
+
+            var output: DatabaseOutput?
+            query.run {
+                output = $0
+            }
+            .whenComplete { result in
+                switch result {
+                case .success:
+                    promise.succeed(output)
+                case .failure(let error):
+                    promise.fail(error)
+                }
+            }
 
             return promise.futureResult.flatMapThrowing { output in
+                guard let output else {
+                    // When inserting with conflict strategy `ignore`, there is no output and so
+                    // the current model should have no ID to signify a new model was not created.
+                    self._$id.inputValue = nil
+                    return
+                }
+
                 var input = self.collectInput()
-//                if case .default = self._$id.inputValue {
-//                    let idKey = Self()._$id.key
-//                    input[idKey] = try .bind(output.decode(idKey, as: Self.IDValue.self))
-//                }
+                if case .default = self._$id.inputValue {
+                    let idKey = Self()._$id.key
+                    input.removeValue(forKey: idKey)
+                }
                 try self.output(from: SavedInput(input))
                 try self.output(from: output.schema(Self.schema))
             }

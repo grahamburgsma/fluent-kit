@@ -36,16 +36,13 @@ extension FluentBenchmarker {
 
             let second = Foo(bar: "a")
 
-            do {
-                try second.create(
-                    onConflict: \.$bar, .ignore,
-                    on: self.database
-                )
-                .wait()
-                XCTFail("Insert should fail with error \(FluentError.noResults)")
-            } catch {
-                XCTAssertEqual("\(error)", FluentError.noResults.description)
-            }
+            try second.create(
+                onConflict: \.$bar, .ignore,
+                on: self.database
+            )
+            .wait()
+
+            XCTAssertNil(second.id)
 
             let fooCount = try Foo
                 .query(on: self.database)
