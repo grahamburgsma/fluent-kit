@@ -11,6 +11,7 @@ public struct DatabaseQuery: Sendable {
     public var sorts: [Sort]
     public var limits: [Limit]
     public var offsets: [Offset]
+    public var returning: Bool
 
     init(schema: String, space: String? = nil) {
         self.schema = schema
@@ -24,6 +25,7 @@ public struct DatabaseQuery: Sendable {
         self.sorts = []
         self.limits = []
         self.offsets = []
+        self.returning = false
     }
 }
 
@@ -58,6 +60,7 @@ extension DatabaseQuery: CustomStringConvertible {
         if !self.offsets.isEmpty {
             parts.append("offsets=\(self.offsets)")
         }
+        parts.append("returning=\(returning)")
         return parts.joined(separator: " ")
     }
     

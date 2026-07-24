@@ -16,6 +16,32 @@ extension Model {
         }.handle(.create, self, on: database)
     }
 
+    public func createAndReturn(on database: any Database) -> EventLoopFuture<Self> {
+        let promise = database.eventLoop.makePromise(of: Self.self)
+
+        database.configuration.middleware.chainingTo(Self.self) { event, model, db in
+            precondition(!self._$id.exists)
+            self.touchTimestamps(.create, .update)
+            self._$id.generate()
+
+            return Self.query(on: database)
+                .set(self.collectInput())
+                .returning(action: .create)
+                .run { output in
+                    do {
+                        try self.output(from: output.schema(Self.schema))
+                        promise.succeed(self)
+                    } catch {
+                        promise.fail(error)
+                    }
+                }
+        }
+        .handle(.create, self, on: database)
+        .cascadeFailure(to: promise)
+
+        return promise.futureResult
+    }
+
     private func _create(on database: any Database) -> EventLoopFuture<Void> {
         precondition(!self._$idExists)
         self.touchTimestamps(.create, .update)
