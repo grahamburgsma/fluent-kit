@@ -57,7 +57,32 @@ public extension Model {
             try self.output(from: SavedInput(self.collectInput()))
         }
     }
-    
+
+    @discardableResult
+    func createAndReturn(on database: any Database) async throws -> Self {
+        try await database.configuration.middleware.chainingTo(Self.self) { event, model, db in
+            try await model._createAndReturn(on: db)
+        }.handle(.create, self, on: database)
+        return self
+    }
+
+    private func _createAndReturn(on database: any Database) async throws {
+        precondition(!self._$idExists)
+        self.touchTimestamps(.create, .update)
+        if self.anyID is any AnyQueryableProperty {
+            self.anyID.generate()
+        }
+
+        nonisolated(unsafe) var output: (any DatabaseOutput)?
+        try await Self.query(on: database)
+            .set(self.collectInput(withDefaultedValues: database is any SQLDatabase))
+            .returning(action: .create)
+            .run { output = $0 }
+
+        guard let output else { throw RunQueryError.noDatabaseOutput }
+        try self.output(from: output.schema(Self.schema))
+    }
+
     func update(on database: any Database) async throws {
         try await database.configuration.middleware.chainingTo(Self.self) { event, model, db in
             try await model.handle(event, on: db)

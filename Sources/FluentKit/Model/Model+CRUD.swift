@@ -13,6 +13,12 @@ extension Model {
             try await self.create(on: database)
         }
     }
+
+    public func createAndReturn(on database: any Database) -> EventLoopFuture<Self> {
+        database.eventLoop.makeFutureWithTask {
+            try await self.createAndReturn(on: database)
+        }
+    }
     
     public func update(on database: any Database) -> EventLoopFuture<Void> {
         database.eventLoop.makeFutureWithTask {

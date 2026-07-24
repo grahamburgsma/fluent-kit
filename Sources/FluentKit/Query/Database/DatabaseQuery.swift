@@ -13,6 +13,7 @@ public struct DatabaseQuery: Sendable {
     public var sorts: [Sort]
     public var limits: [Limit]
     public var offsets: [Offset]
+    public var returning: Bool
 
     var serviceContext: ServiceContext
     let shouldTrace: Bool
@@ -29,6 +30,7 @@ public struct DatabaseQuery: Sendable {
         self.sorts = []
         self.limits = []
         self.offsets = []
+        self.returning = false
         self.serviceContext = ServiceContext.current ?? .topLevel
         self.shouldTrace = shouldTrace
     }
@@ -82,6 +84,7 @@ extension DatabaseQuery: CustomStringConvertible {
         if !self.offsets.isEmpty {
             parts.append("offsets=\(self.offsets)")
         }
+        parts.append("returning=\(returning)")
         return parts.joined(separator: " ")
     }
 
